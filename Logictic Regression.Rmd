@@ -1,0 +1,29 @@
+---
+title: "Logistic regression"
+author: "Dat Quoc Vuong"
+date: "4/18/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Multinomial logistic regression
+
+```{r}
+require(foreign)
+require(nnet)
+require(ggplot2)
+require(reshape2)
+```
+
+Example: Entering high school students make program choices among general program, vocational program and academic program. Their choice might be modeled using their writing score and their social economic status.
+
+# Description of the data
+
+```{r}
+ml <- read.dta("https://stats.idre.ucla.edu/stat/data/hsbdemo.dta")
+```
+
+The data set contains variables on 200 students. The outcome variable is prog, program type. The predictor variables are social economic status, ses, a three-level categorical variable and writing score, write, a continuous variable. Let’s start with getting some descriptive statistics of the variables of interest.
