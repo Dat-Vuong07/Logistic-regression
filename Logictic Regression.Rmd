@@ -12,10 +12,16 @@ knitr::opts_chunk$set(echo = TRUE)
 # Multinomial logistic regression
 
 ```{r}
-require(foreign)
-require(nnet)
-require(ggplot2)
-require(reshape2)
+# Helper packages
+library(dplyr)     # for data wrangling
+library(ggplot2)   # for awesome plotting
+library(rsample)   # for data splitting
+
+# Modeling packages
+library(caret)     # for logistic regression modeling
+
+# Model interpretability packages
+library(vip)       # variable importance
 ```
 
 Example: Entering high school students make program choices among general program, vocational program and academic program. Their choice might be modeled using their writing score and their social economic status.
@@ -26,4 +32,32 @@ Example: Entering high school students make program choices among general progra
 ml <- read.dta("https://stats.idre.ucla.edu/stat/data/hsbdemo.dta")
 ```
 
-The data set contains variables on 200 students. The outcome variable is prog, program type. The predictor variables are social economic status, ses, a three-level categorical variable and writing score, write, a continuous variable. Let’s start with getting some descriptive statistics of the variables of interest.
+The data set contains variables on 200 students. 
+The outcome variable is **prog**, program type. 
+The predictor variables are social economic status, **ses**, a three-level categorical variable and writing score, **write**, a continuous variable. 
+
+Let’s start with getting some descriptive statistics of the variables of interest.
+
+```{r}
+with(ml, table(ses, prog))
+
+with(ml, do.call(rbind, tapply(write, prog, function(x) c(M = mean(x), SD = sd(x)))))
+```
+## Split data
+
+```{r}
+df <- attrition %>% mutate_if(is.ordered, factor, ordered = FALSE)
+
+# Create training (70%) and test (30%) sets for the 
+# rsample::attrition data.
+set.seed(123)  # for reproducibility
+churn_split <- initial_split(df, prop = .7, strata = "Attrition")
+churn_train <- training(churn_split)
+churn_test  <- testing(churn_split)
+```
+
+
+
+
+
+
