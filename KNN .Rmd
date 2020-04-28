@@ -1,0 +1,326 @@
+---
+title: "KNN"
+author: "Dat Quoc Vuong"
+date: "4/27/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+# Helper packages
+library(tidyverse)      # for data wrangling, graphics and other stuff
+library(purrr)      # also some wrangling
+library(rsample)    # for creating validation splits
+library(recipes)    # for feature engineering
+
+# Modeling packages
+library(caret)       # for fitting KNN models
+```
+
+Create training (70%) set for the `rsample::attrition data`
+
+```{r}
+# create training (70%) set for the rsample::attrition data.
+attrit <- attrition %>% mutate_if(is.ordered, factor, ordered = FALSE)
+set.seed(123)
+churn_split <- initial_split(attrit, prop = .7, strata = "Attrition")
+churn_train <- training(churn_split)
+churn_test <- testing(churn_split)
+```
+
+# KNN
+
+K-nearest neighbor (KNN) is a very simple algorithm in which each observation is predicted based on its “similarity” to other observations.
+
+KNN is a memory-based algorithm and cannot be summarized by a closed-form model. This means the training samples are required at run-time and predictions are made directly from the sample relationships.
+
+# Pre-processing the data for KNN
+
+1. Standardizing numeric features by `step_center(all_numeric())` & `step_scale(all_numeric())`
+
+2. All categorical features must be one-hot encoded or encoded using another method (e.g., ordinal encoding)  `step_dummy(all_nominal(), -all_outcomes(), one_hot = TRUE)` so that all categorical features are represented numerically.
+
+3. KNN method is very `sensitive to noisy predictors` since they cause similar samples to have larger magnitudes and variability in distance values. => *removing irrelevant, noisy features often leads to significant improvement*
+
+
+```{r}
+# Create blueprint
+# (take 5 mins and make sure you understand each step of the code)
+blueprint <- recipe(Attrition ~ ., data = churn_train) %>%
+  step_nzv(all_nominal()) %>% # Remove nearzero variance
+  step_integer(contains("Satisfaction")) %>% # convert new data into a set of integers based on the original data values.
+  step_integer(WorkLifeBalance) %>%
+  step_integer(JobInvolvement) %>%
+  step_center(all_numeric(), -all_outcomes()) %>% # normalize numeric data to have a mean of zero - standard the data 
+  step_scale(all_numeric(), -all_outcomes()) %>% # normalize numeric data to have a standard deviation of one
+  step_dummy(all_nominal(), -all_outcomes(), one_hot = TRUE) # convert nominal data (e.g. character or factors) into one or more numeric binary model terms for the levels of the original data.
+
+
+```
+
+
+## Create a resampling method
+
+```{r}
+cv <- trainControl(
+  method = "cv", 
+  number = 5,
+  classProbs = TRUE,                 
+  summaryFunction = twoClassSummary
+)
+```
+
+## Create a hyperparameter grid search
+
+The grid will run from 1 to 343 with the number of grid is 20
+
+**Note when pick the K**
+
+For high signal data with very few noisy (irrelevant) features, smaller values of  k tend to work best. 
+
+As more irrelevant features are involved, larger values of  k are required to smooth out the noise.
+
+```{r}
+hyper_grid <- expand.grid(
+  k = floor(seq(1, nrow(churn_train)/3, length.out = 20))
+)
+```
+
+
+## Fit knn model and perform grid search
+
+```{r}
+start_time <- Sys.time()
+set.seed(123)
+knn_grid <- train(
+  blueprint, 
+  data = churn_train, 
+  method = "knn", 
+  trControl = cv, 
+  tuneGrid = hyper_grid,
+  metric = "ROC"
+)
+end_time <- Sys.time()
+end_time - start_time
+
+ggplot(knn_grid)
+
+```
+
+## Pick the best K from the model 
+
+```{r}
+best_k <- as.numeric(knn_grid$bestTune)
+```
+
+# Re run the model from the best K 
+
+After having the model from a very wide grid search, we need to narow the grid to find the k
+
+```{r}
+hyper_grid_ft <- expand.grid(
+  k = seq(best_k-10,best_k + 10, 2)
+)
+```
+
+# Fine tune the KNN model
+
+```{r}
+start_time <- Sys.time()
+set.seed(123)
+knn_grid_ft <- train(
+  blueprint, 
+  data = churn_train, 
+  method = "knn", 
+  trControl = cv, 
+  tuneGrid = hyper_grid_ft,
+  metric = "ROC"
+)
+end_time <- Sys.time()
+end_time - start_time
+
+```
+
+# Plot the model
+
+```{r}
+
+ggplot(knn_grid_ft)
+
+# Best tune
+
+knn_grid_ft$bestTune
+
+```
+
+
+# Advance grid search 
+
+Different Minkowski differences and different kernels
+
+Let's try out Minkowski difference with different p's and compare
+
+Create a hyperparameter grid search
+
+
+Use the model look up function to search for the parameter
+
+```{r}
+modelLookup("kknn")
+```
+
+## Grid with all parameter
+
+```{r}
+hyper_grid <- expand.grid(
+  kmax = 75,
+  distance = c(0.5, 1, 1.5),
+  kernel =  c("rectangular", "triangular", 
+              "epanechnikov", "gaussian", 
+              "rank", "optimal", "triweight")
+)
+```
+
+
+## Run the model
+
+```{r}
+# takes about 10 mins to run
+start_time <- Sys.time()
+set.seed(123)
+kknn_grid <- train(
+  blueprint, 
+  data = churn_train, 
+  method = "kknn", 
+  trControl = cv, 
+  tuneGrid = hyper_grid,
+  metric = "ROC"
+)
+end_time <- Sys.time()
+end_time - start_time
+
+
+```
+
+
+## look into the best grid
+
+```{r}
+ggplot(kknn_grid)
+
+kknn_grid$bestTune
+
+```
+
+## Re-search the grid by fix the kernel 
+
+The distance will move aroud the best distance
+
+```{r}
+hyper_grid <- expand.grid(
+  kmax = seq(best_k-2,best_k + 2, 2),
+  distance = seq(0.1, 0.6, 0.1),
+  kernel =  "gaussian"
+)
+```
+
+
+## Run the model one more time
+
+```{r}
+# takes about 10 mins to run
+start_time <- Sys.time()
+set.seed(123)
+kknn_grid_distune <- train(
+  blueprint, 
+  data = churn_train, 
+  method = "kknn", 
+  trControl = cv, 
+  tuneGrid = hyper_grid,
+  metric = "ROC"
+)
+end_time <- Sys.time()
+end_time - start_time
+```
+
+
+# Pick the best model
+
+```{r}
+ggplot(kknn_grid_distune)
+
+kknn_grid_distune$bestTune
+```
+
+
+
+## compare to regular knn from the beginning
+
+```{r}
+resamps <- resamples(list(knn = knn_grid,
+                          kknn = kknn_grid_distune))
+
+summary(resamps)
+```
+
+
+## Plot the comparision
+
+```{r}
+trellis.par.set(caretTheme())
+bwplot(resamps, layout = c(3, 1))
+dotplot(resamps, metric = "ROC")
+
+```
+
+
+## Plot the difference of two models
+
+```{r}
+difValues <- diff(resamps)
+summary(difValues)
+
+bwplot(difValues, layout = c(3, 1))
+dotplot(difValues)
+
+```
+
+
+# Fit the final model on all the training data
+
+Since we found the final grid, we don't actually need to do cross validation
+
+```{r}
+fitControl <- trainControl(method = "none", classProbs = TRUE)
+
+knn_full <- train(
+  blueprint, 
+  data = churn_train, 
+  method = "knn", 
+  trControl = fitControl, 
+  tuneGrid = data.frame(k = 73),
+  metric = "ROC"
+)
+```
+
+# Prediction 
+
+```{r}
+predict(knn_full, newdata = head(churn_test))
+
+predict(knn_full, newdata = head(churn_test), type = "prob")
+
+knn_pred <- predict(knn_full, newdata = churn_test)
+
+```
+
+# Confusion Matrix
+
+```{r}
+confusionMatrix(data = knn_pred, reference = churn_test$Attrition)
+```
+

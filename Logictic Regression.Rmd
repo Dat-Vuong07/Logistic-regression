@@ -117,6 +117,37 @@ tidy(model3)
 
 Our results show that both features are statistically significant (at the 0.05 level) and Figure 5.3 illustrates common trends between MonthlyIncome and Attrition; however, working OverTime tends to nearly double the probability of attrition.
 
+```{r}
+
+set.seed(123)
+cv_model1 <- train(
+  Attrition ~ MonthlyIncome, 
+  data = churn_train, 
+  method = "glm",
+  family = "binomial",
+  trControl = trainControl(method = "cv", number = 10)
+)
+
+set.seed(123)
+cv_model2 <- train(
+  Attrition ~ MonthlyIncome + OverTime, 
+  data = churn_train, 
+  method = "glm",
+  family = "binomial",
+  trControl = trainControl(method = "cv", number = 10)
+)
+
+set.seed(123)
+cv_model3 <- train(
+  Attrition ~ ., 
+  data = churn_train, 
+  method = "glm",
+  family = "binomial",
+  trControl = trainControl(method = "cv", number = 10)
+)
+```
+
+
 ## PLS logistic regression
 
 Similar to linear regression, we can perform a PLS logistic regression to assess if reducing the dimension of our numeric predictors helps to improve accuracy. There are 16 numeric features in our data set so the following code performs a 10-fold cross-validated PLS model while tuning the number of principal components to use from 1–16. The optimal model uses 14 principal components, which is not reducing the dimension by much.
@@ -212,12 +243,13 @@ search_grid <- expand.grid(
 )
 
 set.seed(123)
-cv_model_BN <- train(
+cv_model_BN2 <- train(
   Attrition ~ ., 
   data = churn_train, 
   method = "nb",
-  trControl = trainControl(method = "cv", number = 10),
-  preProc = c("BoxCox", "center", "scale", "pca"))
+  trControl = trainControl(method = "cv", number = 5), 
+  tuneGrid = search_grid, 
+  preProc = c("BoxCox","center"))
 
 ```
 
@@ -227,7 +259,18 @@ cv_model_BN <- train(
 
 **Assumption**
 
-In order to estimate fk(x), we will first make some assumptions about its form.
+*Assume that p = 1—that is, we have only one predictor*
+
+The LDA classifier results from assuming that the observations within each class come from a normal distribution with a class-specific mean vector and a common variance σ^2, and plugging estimates for these parameters into the Bayes classifier.
+
+*In case p > 1*
+
+In the case of p > 1 predictors, the LDA classifier assumes that the observations in the kth class are drawn from a multivariate Gaussian distribution N (μk , Σ), where μk is a class-specific mean vector, and Σ is a covariance matrix that is common to all K classes.
+
+**PreProcess**
+
+Use BoxCox in preProcess -- it transforms each predictor variable so close to normally distributed -> normal assumption then met.
+
 
 ```{r}
 set.seed(123)
@@ -235,45 +278,63 @@ cv_model_lda <- train(
   Attrition ~ ., 
   data = churn_train, 
   method = "lda",
-  family = "binomial",
   trControl = trainControl(method = "cv", number = 10),
   preProcess = c("BoxCox", "zv", "center", "scale"),
   tuneLength = 16
 )
 ```
 
+## Quadratic Discriminant Analysis
+
+Quadratic discriminant analysis (QDA) provides an alternative approach. Like LDA, the QDA classifier results from assuming that the observations from each class are drawn from a Gaussian distribution, and plugging estimates for the parameters into Bayes’ theorem in order to per- form prediction.
+
+However, unlike LDA, QDA assumes that each class has its own covariance matrix. That is, it assumes that an observation from the kth class is of the form X ∼ N(μk,Σk), where Σk is a covariance matrix for the kth class.
+
+
+**Compare with LDA**
+
+Consequently, LDA is a much less flexible classifier than QDA, and so has substantially lower variance. This can potentially lead to improved prediction performance. But there is a trade-off: if LDA’s assumption that the K classes share a common covariance matrix is badly off, then LDA can suffer from high bias. Roughly speaking, LDA tends to be a better bet than QDA if there are relatively few training observations and so reducing variance is crucial. In contrast, QDA is recommended if the training set is very large, so that the variance of the classifier is not a major concern, or if the assumption of a common covariance matrix for the K classes is clearly untenable.
+
+
+```{r, eval=FALSE}
+set.seed(123)
+cv_model_qda <- train(
+  Attrition ~ ., 
+  data = churn_train, 
+  method = "qda",
+  trControl = trainControl(method = "none"),
+  preProcess = c("BoxCox", "center", "scale")
+)
+```
+
+## Compare classification method
+
+**LDA & Logistic**
+
+Both are linear functions of x. Hence, both logistic regression and LDA produce **linear** decision boundaries. The only difference between the two approaches lies in the fact that β0 and β1 *(logistic regression)* are estimated using maximum likelihood, whereas c0 and c1 *(LDA)* are computed using the estimated mean and variance from a normal distribution. 
+
+*LDA assumes* that the observations are drawn from a Gaussian distribution with a common covariance matrix in each class, and so can provide some improvements over logistic regression when this assumption approximately holds. 
+
+Conversely, *logistic regression* can outperform LDA if these Gaussian assumptions are not met.
+
+**KNN**
+
+KNN is a completely non-parametric approach: no assumptions are made about the shape of the decision boundary. There- fore, we can expect this approach to dominate LDA and logistic regression when the decision boundary is highly non-linear.
+
+On the other hand, KNN does not tell us which predictors are important; we don’t get a table of coefficients
+
+**QDA**
+
+QDA serves as a compromise between the non-parametric KNN method and the linear LDA and logistic regression approaches. Since QDA assumes a quadratic decision boundary, it can accurately model a wider range of problems than can the linear methods.
+
+Though not as flexible as KNN, QDA can perform better in the presence of a limited number of training observations because it does make some assumptions about the form of the decision boundary.
+
+**Summary**
+
+When the true decision boundaries are linear, then the LDA and logistic regression approaches will tend to perform well. When the boundaries are moderately non-linear, QDA may give better results. Finally, for much more complicated decision boundaries, a non-parametric approach such as KNN can be superior. But the level of smoothness for a non-parametric approach must be chosen carefully.
 
 ## Model accuracy
 
-
-```{r}
-set.seed(123)
-cv_model1 <- train(
-  Attrition ~ MonthlyIncome, 
-  data = churn_train, 
-  method = "glm",
-  family = "binomial",
-  trControl = trainControl(method = "cv", number = 10)
-)
-
-set.seed(123)
-cv_model2 <- train(
-  Attrition ~ MonthlyIncome + OverTime, 
-  data = churn_train, 
-  method = "glm",
-  family = "binomial",
-  trControl = trainControl(method = "cv", number = 10)
-)
-
-set.seed(123)
-cv_model3 <- train(
-  Attrition ~ ., 
-  data = churn_train, 
-  method = "glm",
-  family = "binomial",
-  trControl = trainControl(method = "cv", number = 10)
-)
-```
 
 ```{r}
 summary(
@@ -281,7 +342,9 @@ summary(
     list(
       model1 = cv_model1, 
       model2 = cv_model2, 
-      model3 = cv_model3
+      model3 = cv_model3,
+      model4 = cv_model_pls,
+      model5 = cv_model_lda
     )
   )
 )$statistics$Accuracy
